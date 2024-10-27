@@ -5,23 +5,27 @@ namespace IMEdge\Inventory;
 use IMEdge\Json\JsonSerialization;
 use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
+use RuntimeException;
 
 class NodeIdentifier implements JsonSerialization
 {
-    public function __construct(
+    final public function __construct(
         public readonly UuidInterface $uuid,
         public readonly string $name,
         public readonly string $fqdn,
     ) {
     }
 
+    /**
+     * @param object{uuid: string, name: string, fqdn: string} $any
+     */
     public static function fromSerialization($any): NodeIdentifier
     {
         if (! is_object($any)) {
-            throw new \RuntimeException('Cannot unserialize NodeIdentifier: ' . get_debug_type($any));
+            throw new RuntimeException('Cannot unserialize NodeIdentifier: ' . get_debug_type($any));
         }
 
-        return new NodeIdentifier(Uuid::fromString($any->uuid), $any->name, $any->fqdn);
+        return new static(Uuid::fromString($any->uuid), $any->name, $any->fqdn);
     }
 
     public function jsonSerialize(): object

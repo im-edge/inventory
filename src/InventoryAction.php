@@ -6,12 +6,19 @@ use IMEdge\Json\JsonSerialization;
 use InvalidArgumentException;
 use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
+use RuntimeException;
+use stdClass;
 
 class InventoryAction implements JsonSerialization
 {
+    /** @var array<string, string|int|null>|null */
     protected ?array $allDbValues = null;
 
-    public function __construct(
+    /**
+     * @param string[] $keyProperties
+     * @param array<string, string|int|object|bool|null>|null $values
+     */
+    final public function __construct(
         public readonly UuidInterface $sourceNode,
         public readonly string $tableName,
         // e.g. "1694703295979-0"
@@ -24,10 +31,22 @@ class InventoryAction implements JsonSerialization
     ) {
     }
 
+    /**
+     * @param object{
+     *     sourceNode: string,
+     *     tableName: string,
+     *     streamPosition: string,
+     *     action: string,
+     *     key: string,
+     *     checksum: ?string,
+     *     keyProperties: string[],
+     *     values: ?array<string, mixed>,
+     * }&stdClass $any
+     */
     public static function fromSerialization($any): InventoryAction
     {
         if (! is_object($any)) {
-            throw new \RuntimeException('Cannot unserialize InventoryAction: ' . get_debug_type($any));
+            throw new RuntimeException('Cannot un-serialize InventoryAction: ' . get_debug_type($any));
         }
 
         $any->sourceNode = Uuid::fromString($any->sourceNode);
@@ -36,12 +55,12 @@ class InventoryAction implements JsonSerialization
             $any->values = (array) $any->values;
         }
 
-        return new InventoryAction(...(array) $any);
+        return new static(...(array) $any);
     }
 
-    public function jsonSerialize(): array
+    public function jsonSerialize(): stdClass
     {
-        return [
+        return (object) [
             'sourceNode'     => $this->sourceNode->toString(),
             'tableName'      => $this->tableName,
             'streamPosition' => $this->streamPosition,
@@ -53,6 +72,9 @@ class InventoryAction implements JsonSerialization
         ];
     }
 
+    /**
+     * @return array<string, string|int|null>
+     */
     public function getDbValuesForUpdate(): array
     {
         $values = $this->getAllDbValues();
@@ -63,6 +85,9 @@ class InventoryAction implements JsonSerialization
         return $values;
     }
 
+    /**
+     * @return array<string, string|int|null>
+     */
     public function getDbKeyProperties(): array
     {
         $values = $this->getAllDbValues(); // TODO: this is not efficient
@@ -74,11 +99,17 @@ class InventoryAction implements JsonSerialization
         return $properties;
     }
 
+    /**
+     * @return array<string, string|int|null>
+     */
     public function getAllDbValues(): array
     {
         return $this->allDbValues ??= $this->prepareAllDbValues();
     }
 
+    /**
+     * @return array<string, string|int|null>
+     */
     public function prepareAllDbValues(): array
     {
         $values = $this->values;
@@ -86,37 +117,53 @@ class InventoryAction implements JsonSerialization
             return [];
         }
 
+        $result = [];
         foreach ($values as $property => &$value) {
-            if ($value !== null && $property !== null) {
-                if (
+            if (
+                is_string($value) && (
                     (str_contains($property, 'uuid') && strlen($value) === 36)
                     || (str_contains($property, 'checksum') && strlen($value) === 36)
-                ) {
-                    $value = Uuid::fromString($value)->getBytes();
-                }
+                )
+            ) {
+                $value = Uuid::fromString($value)->getBytes();
             }
-            if (is_object($value) && isset($value->oid)) {
-                $value = $value->oid;
-            }
-            if (is_bool($value)) {
-                $value = $value ? 'y' : 'n';
-            }
-            if (is_string($value)) {
-                if (str_starts_with($value, '0x')) {
-                    $value = hex2bin(substr($value, 2));
-                }
-            } elseif ($value !== null && ! is_int($value)) {
-                if (is_object($value)) {
-                    throw new InvalidArgumentException('Not a string, an object: ' . json_encode($value));
-                } elseif (is_array($value)) {
-                    throw new InvalidArgumentException('Not a string, an array: ' . json_encode($value));
-                } else {
-                    throw new InvalidArgumentException('Not a string: ' . get_debug_type($value) . json_encode($value));
-                }
-            }
+            $result[$property] = self::normalizeDbValue($value);
         }
 
-        return $values;
+        return $result;
+    }
+
+    /** @noinspection PhpInconsistentReturnPointsInspection */
+    protected static function normalizeDbValue(object|string|int|bool|null $value): string|int|null
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_bool($value)) {
+            return $value ? 'y' : 'n';
+        }
+        if (is_object($value)) {
+            if (isset($value->oid)) {
+                return $value->oid;
+            } else {
+                throw new InvalidArgumentException('Not a string, an object: ' . json_encode($value));
+            }
+        }
+        if (is_string($value)) {
+            if (str_starts_with($value, '0x')) {
+                $binary = hex2bin(substr($value, 2));
+                if ($binary === false) {
+                    throw new RuntimeException('hex2bin failed for ' . $value);
+                }
+
+                return $binary;
+            }
+
+            return $value;
+        }
     }
 }
 
