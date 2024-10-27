@@ -9,7 +9,5 @@ interface CentralInventory
      */
     public function shipBulkActions(array $actions): void;
 
-    public function getCredentials(): array;
-
     public function loadTableSyncPositions(NodeIdentifier $nodeIdentifier): array;
 }
