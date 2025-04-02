@@ -125,9 +125,10 @@ class InventoryAction implements JsonSerialization
                     || (str_contains($property, 'checksum') && strlen($value) === 36)
                 )
             ) {
-                $value = Uuid::fromString($value)->getBytes();
+                $result[$property] = Uuid::fromString($value)->getBytes();
+            } else {
+                $result[$property] = self::normalizeDbValue($value);
             }
-            $result[$property] = self::normalizeDbValue($value);
         }
 
         return $result;
