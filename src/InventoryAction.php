@@ -155,7 +155,7 @@ class InventoryAction implements JsonSerialization
         }
         if (is_string($value)) {
             if (str_starts_with($value, '0x')) {
-                $binary = hex2bin(substr($value, 2));
+                $binary = @hex2bin(substr($value, 2));
                 if ($binary === false) {
                     throw new RuntimeException('hex2bin failed for ' . $value);
                 }
